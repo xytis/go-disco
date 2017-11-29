@@ -1,0 +1,31 @@
+memo = "ae39e6687858fb5760885697a8b04e31194d40a693ee4e6b58ecc93f1796d726"
+
+[[projects]]
+  name = "github.com/hashicorp/consul"
+  packages = ["api"]
+  revision = "9564c2978b59c060aed0657e662a4eb1c6f35356"
+  version = "v1.0.1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/hashicorp/go-cleanhttp"
+  packages = ["."]
+  revision = "3573b8b52aa7b37b9358d966a898feb387f62437"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/hashicorp/go-rootcerts"
+  packages = ["."]
+  revision = "6bb64b370b90e7ef1fa532be9e591a81c3493e00"
+
+[[projects]]
+  name = "github.com/hashicorp/serf"
+  packages = ["coordinate"]
+  revision = "d6574a5bb1226678d7010325fb6c985db20ee458"
+  version = "v0.8.1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/mitchellh/go-homedir"
+  packages = ["."]
+  revision = "b8bc1bf767474819792c23f32d8286a45736f1c6"
