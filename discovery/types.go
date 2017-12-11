@@ -1,8 +1,16 @@
 package discovery
 
+import (
+	"fmt"
+)
+
 type Service struct {
 	Address string
 	Port    int
+}
+
+func (s Service) String() string {
+	return fmt.Sprintf("[Service %s:%d]", s.Address, s.Port)
 }
 
 type Change struct {
@@ -10,13 +18,6 @@ type Change struct {
 	List  []*Service
 }
 
-type Discovery interface {
-	Updates() <-chan Change
-	Close() error
-}
-
-type Backend interface {
-	Name() string
-	//Creates a new parralel procedure to watch for changes
-	Discover(string, chan<- Change, <-chan chan error) error
+func (c Change) String() string {
+	return fmt.Sprintf("[Change %d %+v]", c.Index, c.List)
 }

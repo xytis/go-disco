@@ -2,16 +2,12 @@ package discovery
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/url"
 	"time"
 )
 
 type DNSBackend struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-
 	n      *url.URL
 	c      *net.Resolver
 	ns     string
@@ -25,10 +21,7 @@ func NewDNSBackend(uri *url.URL) (Backend, error) {
 	//     timeout=[default 5]
 	//     protocol=[default udp]
 
-	ctx, cancel := context.WithCancel(context.TODO())
 	b := &DNSBackend{
-		ctx:    ctx,
-		cancel: cancel,
 		n:      uri,
 		c:      new(net.Resolver),
 		ns:     uri.Host,
@@ -48,15 +41,22 @@ func (b *DNSBackend) Name() string {
 	return b.n.String()
 }
 
-func (b *DNSBackend) Discover(name string, ch chan<- Change, done <-chan chan error) error {
+func (b *DNSBackend) Discover(ctx context.Context, name string) (<-chan Change, error) {
+	output := make(chan Change)
+
 	go func() {
+		defer close(output)
 		var index uint64
+		var channel chan Change
+		var change Change
 	loop:
 		for {
-			_, addrs, err := b.c.LookupSRV(b.ctx, "", "", b.nameToSRV(name))
+			//Disable sending
+			channel = nil
+			_, addrs, err := b.c.LookupSRV(ctx, "", "", b.nameToSRV(name))
 			if err == nil {
 				index = index + 1
-				change := Change{
+				change = Change{
 					Index: index,
 					List:  make([]*Service, len(addrs)),
 				}
@@ -67,22 +67,18 @@ func (b *DNSBackend) Discover(name string, ch chan<- Change, done <-chan chan er
 						Port:    int(srv.Port),
 					}
 				}
-				select {
-				case ch <- change:
-				case errc := <-done:
-					fmt.Printf("closed\n")
-					errc <- nil
-					return
-				}
-
+				//Enable sending
+				channel = output
 			}
 			select {
-			case <-b.ctx.Done():
+			case <-ctx.Done():
 				return
+			case channel <- change:
+				continue loop
 			case <-time.After(5 * time.Second):
 				continue loop
 			}
 		}
 	}()
-	return nil
+	return output, nil
 }

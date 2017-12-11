@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"time"
@@ -19,7 +20,6 @@ type ConsulBackend struct {
 }
 
 func NewConsulBackend(uri *url.URL) (Backend, error) {
-	fmt.Printf("uri:opaque %v\nuri:host %v\n", uri.Opaque, uri.Host)
 	var config *api.Config
 	switch uri.Opaque {
 	case "default":
@@ -48,30 +48,31 @@ func (b *ConsulBackend) Name() string {
 	return b.n.String()
 }
 
-func (b *ConsulBackend) Discover(name string, ch chan<- Change, done <-chan chan error) error {
+func (b *ConsulBackend) Discover(ctx context.Context, name string) (<-chan Change, error) {
+	output := make(chan Change)
 	c := b.c.Catalog()
 	qo := &api.QueryOptions{
 		WaitIndex: 0,
 	}
+
 	go func() {
-		var lerr error
-		var output chan<- Change
+		defer close(output)
 		var timeout time.Duration
+		var channel chan Change
 		var change Change
 	loop:
 		for {
-			fmt.Printf("looking up a service\n")
+			//Disable sending
+			channel = nil
+			//TODO: alter consul lib to use ctx
 			s, m, err := c.Service(name, "", qo)
 			if err != nil {
-				fmt.Printf("err: %v\n", err)
-				lerr = err
 				output = nil
 				timeout = timeout + 1*time.Second
 				if timeout > MAX_TIMEOUT {
 					timeout = MAX_TIMEOUT
 				}
 			} else {
-				output = ch
 				timeout = 0 * time.Second
 
 				qo.WaitIndex = m.LastIndex
@@ -80,28 +81,27 @@ func (b *ConsulBackend) Discover(name string, ch chan<- Change, done <-chan chan
 					List:  make([]*Service, len(s)),
 				}
 				for i, service := range s {
+					addr := service.ServiceAddress
+					if addr == "" {
+						addr = service.Address
+					}
 					change.List[i] = &Service{
-						Address: service.ServiceAddress,
+						Address: addr,
 						Port:    service.ServicePort,
 					}
 				}
+				//Enable sending
+				channel = output
 			}
-			for {
-				fmt.Printf("trying to put output\n")
-				select {
-				case errc := <-done:
-					fmt.Printf("closed\n")
-					errc <- lerr
-					return
-				case output <- change:
-					fmt.Printf("changes delivered\n")
-					continue loop
-				case <-time.After(timeout):
-					fmt.Printf("timeout reached: %v\n", timeout.Seconds())
-					continue loop
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case channel <- change:
+				continue loop
+			case <-time.After(timeout):
+				continue loop
 			}
 		}
 	}()
-	return nil
+	return output, nil
 }

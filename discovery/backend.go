@@ -1,9 +1,16 @@
 package discovery
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 )
+
+type Backend interface {
+	Name() string
+	//Creates a new parralel procedure to watch for changes
+	Discover(context.Context, string) (<-chan Change, error)
+}
 
 func CreateBackend(descriptor string) (Backend, error) {
 	if url, err := url.Parse(descriptor); err != nil {
@@ -17,7 +24,7 @@ func CreateBackend(descriptor string) (Backend, error) {
 			b, e := NewDNSBackend(url)
 			return b, e
 		default:
-			return nil, fmt.Errorf("discovery scheme '%s' not supported", url.Scheme)
+			return nil, fmt.Errorf("discovery scheme '%s' not yet supported", url.Scheme)
 		}
 	}
 }

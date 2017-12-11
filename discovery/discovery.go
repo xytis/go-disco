@@ -1,17 +1,24 @@
 package discovery
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
 
+type Discovery interface {
+	Updates() <-chan Change
+	Close()
+}
+
 type discovery struct {
-	m           *sync.RWMutex
-	in          chan Change
-	state       Change
-	out         []chan Change
-	stopLoop    chan chan error
-	stopBackend chan chan error
+	ctx  context.Context
+	done context.CancelFunc
+
+	m     *sync.RWMutex
+	in    <-chan Change
+	state Change
+	out   []chan Change
 
 	//DEBUG: should not be used in non-debug code
 	_id string
@@ -25,20 +32,19 @@ func (d *discovery) Updates() <-chan Change {
 	return ret
 }
 
-func (d *discovery) Close() error {
-	errc := make(chan error)
-	d.stopLoop <- errc
-	return <-errc
-
+func (d *discovery) Close() {
+	d.done()
 }
 
 func (d *discovery) run() {
 	for {
 		select {
-		case c := <-d.in:
+		case c, ok := <-d.in:
+			if !ok {
+				return
+			}
 			d.broadcast(c)
-		case errc := <-d.stopLoop:
-			d.stop(errc)
+		case <-d.ctx.Done():
 			return
 		}
 	}
@@ -53,35 +59,22 @@ func (d *discovery) broadcast(c Change) {
 	}
 }
 
-func (d *discovery) stop(errc chan error) {
-	d.m.Lock()
-	defer d.m.Unlock()
-	//Stop backend
-	errb := make(chan error)
-	d.stopBackend <- errb
-	errc <- <-errb //Pass any backend error
-	for _, out := range d.out {
-		close(out)
-	}
-	close(d.in)
-	d.in = nil
-	d.out = nil
-	return
-}
-
-func NewDiscovery(b Backend, id string) (Discovery, error) {
-	d := discovery{
-		m:           &sync.RWMutex{},
-		in:          make(chan Change),
-		state:       Change{},
-		out:         make([]chan Change, 0),
-		stopLoop:    make(chan chan error),
-		stopBackend: make(chan chan error),
-		_id:         id,
-	}
-	if err := b.Discover(id, d.in, d.stopBackend); err != nil {
+func NewDiscovery(ctx context.Context, b Backend, id string) (Discovery, error) {
+	nctx, cancel := context.WithCancel(ctx)
+	if in, err := b.Discover(nctx, id); err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to register for '%v' discovery in backend '%v'", id, b.Name())
+	} else {
+		d := discovery{
+			ctx:   nctx,
+			done:  cancel,
+			m:     &sync.RWMutex{},
+			in:    in,
+			state: Change{},
+			out:   make([]chan Change, 0),
+			_id:   id,
+		}
+		go d.run()
+		return &d, nil
 	}
-	go d.run()
-	return &d, nil
 }

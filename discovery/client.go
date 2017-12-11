@@ -1,31 +1,42 @@
 package discovery
 
 import (
+	"context"
 	"fmt"
 	"os"
 )
 
-type Client struct {
-	b Backend
+type Client interface {
+	DiscoverOnce(string) ([]*Service, error)
+	Discover(string) (Discovery, error)
+	Close() error
 }
 
-func NewFromEnv() (*Client, error) {
+type client struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	b      Backend
+}
+
+func NewFromEnv() (Client, error) {
 
 	uri := os.Getenv("DISCOVERY_BACKEND")
+	ctx, cancel := context.WithCancel(context.TODO())
 
 	if backend, err := CreateBackend(uri); err == nil {
-		c := Client{
-			b: backend,
+		c := client{
+			ctx:    ctx,
+			cancel: cancel,
+			b:      backend,
 		}
-		c.init()
 		return &c, nil
 	} else {
 		return nil, fmt.Errorf("could not create backend %v: %v", uri, err)
 	}
 }
 
-func (c *Client) DiscoverOnce(name string) ([]*Service, error) {
-	if d, err := NewDiscovery(c.b, name); err != nil {
+func (c *client) DiscoverOnce(name string) ([]*Service, error) {
+	if d, err := NewDiscovery(c.ctx, c.b, name); err != nil {
 		return nil, err
 	} else {
 		change := <-d.Updates()
@@ -33,11 +44,12 @@ func (c *Client) DiscoverOnce(name string) ([]*Service, error) {
 	}
 }
 
-func (c *Client) Discover(name string) (d Discovery, err error) {
-	d, err = NewDiscovery(c.b, name)
+func (c *client) Discover(name string) (d Discovery, err error) {
+	d, err = NewDiscovery(c.ctx, c.b, name)
 	return
 }
 
-func (c *Client) init() {
+func (c *client) Close() error {
+	return nil
 
 }
